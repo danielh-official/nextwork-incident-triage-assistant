@@ -24,6 +24,15 @@ Rules:
 - likely_causes and recommended_actions should each have 1-3 items"""
 
 
+def _strip_fences(text: str) -> str:
+    # ponytail: Claude sometimes wraps the JSON in ```json fences despite the prompt.
+    # Swap for a tool/structured-output call if the shape drifts further.
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1].removeprefix("json").strip()
+    return text
+
+
 def analyze_log(log_text: str, source: str, settings: Settings) -> TriageAnalysis:
     # Create an Anthropic client with the API key and timeout
     client = Anthropic(
@@ -50,5 +59,12 @@ def analyze_log(log_text: str, source: str, settings: Settings) -> TriageAnalysi
     )
 
     # Validate Claude's JSON against our Pydantic model
-    analysis = TriageAnalysis.model_validate_json(response_text)
+    analysis = TriageAnalysis.model_validate_json(_strip_fences(response_text))
     return analysis
+
+
+if __name__ == "__main__":
+    assert _strip_fences('{"a": 1}') == '{"a": 1}'
+    assert _strip_fences('```json\n{"a": 1}\n```') == '{"a": 1}'
+    assert _strip_fences('```\n{"a": 1}\n```') == '{"a": 1}'
+    print("ok")
