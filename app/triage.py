@@ -3,7 +3,7 @@ import logging
 from anthropic import Anthropic
 
 from app.config import Settings
-from app.models import TriageAnalysis
+from app.models import Severity, TriageAnalysis
 
 logger = logging.getLogger("triage")
 
@@ -23,6 +23,41 @@ Rules:
 - Return ONLY the JSON object, no markdown, no code fences, no explanation
 - likely_causes and recommended_actions should each have 1-3 items"""
 
+# Deterministic rules that override AI severity for known critical patterns
+ESCALATION_RULES = [
+    {
+        "patterns": ["OOM", "OutOfMemoryError", "out of memory", "Cannot allocate memory"],
+        "severity": "critical",
+        "reason": "Memory exhaustion detected",
+    },
+    {
+        "patterns": ["segfault", "SIGSEGV", "segmentation fault", "core dumped"],
+        "severity": "critical",
+        "reason": "Process crash detected",
+    },
+    {
+        "patterns": ["FATAL", "panic", "unrecoverable"],
+        "severity": "critical",
+        "reason": "Fatal error keyword detected",
+    },
+    {
+        "patterns": ["unauthorized", "403 Forbidden", "401 Unauthorized", "authentication failed"],
+        "severity": "high",
+        "reason": "Authentication or authorization failure detected",
+    },
+]
+
+# Ordered lowest to highest for severity comparison
+SEVERITY_ORDER = ["info", "low", "medium", "high", "critical"]
+
+def check_escalation_rules(log_text: str) -> dict | None:
+    # Convert log to lowercase for case-insensitive matching
+    log_lower = log_text.lower()
+    for rule in ESCALATION_RULES:
+        for pattern in rule["patterns"]:
+            if pattern.lower() in log_lower:
+                return {"severity": rule["severity"], "reason": rule["reason"]}
+    return None
 
 def _strip_fences(text: str) -> str:
     # ponytail: Claude sometimes wraps the JSON in ```json fences despite the prompt.
@@ -59,7 +94,28 @@ def analyze_log(log_text: str, source: str, settings: Settings) -> TriageAnalysi
     )
 
     # Validate Claude's JSON against our Pydantic model
-    analysis = TriageAnalysis.model_validate_json(_strip_fences(response_text))
+    analysis = TriageAnalysis.model_validate_json(response_text)
+
+    # Check if deterministic rules should override the AI severity
+    escalation = check_escalation_rules(log_text)
+    if escalation:
+        escalation_severity = Severity(escalation["severity"])
+        # Only escalate UP, never lower the AI's rating
+        if SEVERITY_ORDER.index(escalation_severity.value) > SEVERITY_ORDER.index(
+            analysis.severity.value
+        ):
+            original = analysis.severity.value
+            analysis.severity = escalation_severity
+            analysis.escalated = True
+            analysis.escalation_reason = escalation["reason"]
+            logger.info(
+                f"Escalation applied: {original} -> {escalation_severity.value}",
+                extra={
+                    "original_severity": original,
+                    "escalated_severity": escalation_severity.value,
+                },
+            )
+
     return analysis
 
 

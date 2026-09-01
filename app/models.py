@@ -31,6 +31,8 @@ class TriageAnalysis(BaseModel):
     summary: str
     likely_causes: list[str]
     recommended_actions: list[str]
+    escalated: bool = False
+    escalation_reason: str | None = None
 
 
 # Full API response wrapping the analysis
