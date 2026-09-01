@@ -94,7 +94,7 @@ def analyze_log(log_text: str, source: str, settings: Settings) -> TriageAnalysi
     )
 
     # Validate Claude's JSON against our Pydantic model
-    analysis = TriageAnalysis.model_validate_json(response_text)
+    analysis = TriageAnalysis.model_validate_json(_strip_fences(response_text))
 
     # Check if deterministic rules should override the AI severity
     escalation = check_escalation_rules(log_text)
