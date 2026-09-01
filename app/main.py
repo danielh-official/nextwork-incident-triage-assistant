@@ -44,6 +44,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
     request_id = str(uuid.uuid4())
@@ -55,3 +56,19 @@ async def add_request_id(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     return response
+
+
+@app.post("/triage", response_model=TriageResponse)
+async def triage_incident(request: Request, payload: TriageRequest):
+    request_id = request.state.request_id
+    # Call the structured triage function
+    analysis = analyze_log(
+        log_text=payload.log_text,
+        source=payload.source,
+        settings=settings,
+    )
+    return TriageResponse(
+        request_id=request_id,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        analysis=analysis,
+    )
