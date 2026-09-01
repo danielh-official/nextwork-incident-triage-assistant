@@ -14,9 +14,15 @@ class Severity(str, Enum):
 
 # Input model for the triage request
 class TriageRequest(BaseModel):
-    log_text: str
-    source: str = "unknown"
-
+    log_text: str = Field(
+        ...,
+        min_length=10,
+        max_length=5000,
+        description="The error log or incident text to analyze",
+    )
+    source: str = Field(
+        default="unknown", description="Source system or application name"
+    )
 
 # Structured output from Claude's analysis
 class TriageAnalysis(BaseModel):
